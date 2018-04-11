@@ -73,4 +73,5 @@ def image_warp(im, flow):
         warped_flat = tf.add_n([wa * Ia, wb * Ib, wc * Ic, wd * Id])
         warped = tf.reshape(warped_flat, [num_batch, height, width, channels])
 
+
         return warped

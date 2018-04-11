@@ -12,6 +12,7 @@ from e2eflow.util import config_dict
 from e2eflow.core.image_warp import image_warp
 from e2eflow.kitti.input import KITTIInput
 from e2eflow.kitti.data import KITTIData
+from e2eflow.kitti.pose_evaluation_utils import *
 from e2eflow.chairs.data import ChairsData
 from e2eflow.chairs.input import ChairsInput
 from e2eflow.sintel.data import SintelData
@@ -40,6 +41,8 @@ tf.app.flags.DEFINE_integer('num', 10,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', 100,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
+tf.app.flags.DEFINE_integer('test_seq', 9,
+                            'index of test sequences')
 tf.app.flags.DEFINE_string('gpu', '0',
                            'GPU device to evaluate on.')
 tf.app.flags.DEFINE_boolean('output_benchmark', False,
@@ -124,11 +127,18 @@ def _evaluate_experiment(name, input_fn, data_input):
         height, width, _ = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
         im1 = resize_input(im1, height, width, resized_h, resized_w)
         im2 = resize_input(im2, height, width, resized_h, resized_w) # TODO adapt train.py
+        pose = []
+        if FLAGS.variant == 'odometry':
+            _, pose, _, flow, flow_bw = unsupervised_loss(
+                (im1, im2),
+                normalization=data_input.get_normalization(),
+                params=params, augment=False, return_pose=True)
 
-        _, flow, flow_bw = unsupervised_loss(
-            (im1, im2),
-            normalization=data_input.get_normalization(),
-            params=params, augment=False, return_flow=True)
+        else:
+            _, flow, flow_bw = unsupervised_loss(
+                (im1, im2),
+                normalization=data_input.get_normalization(),
+                params=params, augment=False, return_flow=True)
 
         im1 = resize_output(im1, height, width, 3)
         im2 = resize_output(im2, height, width, 3)
@@ -195,6 +205,18 @@ def _evaluate_experiment(name, input_fn, data_input):
 
             # list of (scalar_op, title)
             scalar_slots = [(flow_error_avg(flow_gt, flow, mask), 'EPE_all')]
+        elif FLAGS.variant == 'odometry':
+            image_slots = [(im1 / 255, 'first image'),
+                           #(im1_pred / 255, 'warped second image', 0, 1),
+                           (im1_diff / 255, 'warp error'),
+                           #(im2 / 255, 'second image', 1, 0),
+                           #(im2_diff / 255, '|first - second|', 1, 2),
+                           (flow_to_color(flow), 'flow prediction')]
+            #rmse = get_pose_rmse(truth[0], pose)
+            #scalar_slots = [(pose[0][0], 'tx'), (pose[0][1], 'ty'), (pose[0][2], 'tz'),
+            #                (pose[0][3], 'rx'), (pose[0][4], 'ry'), (pose[0][5], 'rz')]
+            scalar_slots = [(pose[0], 'pose')]
+
         else:
             image_slots = [(im1 / 255, 'first image'),
                            #(im1_pred / 255, 'warped second image', 0, 1),
@@ -212,7 +234,11 @@ def _evaluate_experiment(name, input_fn, data_input):
         all_ops = image_ops + scalar_ops
 
         image_lists = []
-        averages = np.zeros(len(scalar_ops))
+        poses = []
+        if FLAGS.variant == 'odometry':
+            averages = np.zeros(len(scalar_ops)-1)
+        else :
+            averages = np.zeros(len(scalar_ops))
         sess_config = tf.ConfigProto(allow_soft_placement=True)
 
         exp_out_dir = os.path.join('../out', name)
@@ -235,6 +261,9 @@ def _evaluate_experiment(name, input_fn, data_input):
 
             # TODO adjust for batch_size > 1 (also need to change image_lists appending)
             max_iter = FLAGS.num if FLAGS.num > 0 else None
+            if FLAGS.variant == 'odometry':
+                if FLAGS.test_seq == 9:
+                    max_iter = 1590
 
             try:
                 num_iters = 0
@@ -245,6 +274,9 @@ def _evaluate_experiment(name, input_fn, data_input):
                     image_results = all_results[:num_ims]
                     scalar_results = all_results[num_ims:]
                     iterstr = str(num_iters).zfill(6)
+                    if FLAGS.variant=='odometry':
+                        scalar_results = all_results[num_ims+1:]
+                        poses.append(all_results[num_ims])
                     if FLAGS.output_visual:
                         path_col = os.path.join(exp_out_dir, iterstr + '_flow.png')
                         path_overlay = os.path.join(exp_out_dir, iterstr + '_img.png')
@@ -259,7 +291,7 @@ def _evaluate_experiment(name, input_fn, data_input):
                         else:
                             write_flo(flow_fw_res, path_fw + '_10.flo')
                         if FLAGS.output_backward:
-                            path_fw = os.path.join(exp_out_dir, iterstr + '_01.png')
+                            path_bw = os.path.join(exp_out_dir, iterstr + '_01.png')
                             write_rgb_png(flow_bw_int16_res, path_bw, bitdepth=16)
                     if num_iters < FLAGS.num_vis:
                         image_lists.append(image_results)
@@ -279,12 +311,30 @@ def _evaluate_experiment(name, input_fn, data_input):
             coord.request_stop()
             coord.join(threads)
 
-    for t, avg in zip(scalar_slots, averages):
-        _, scalar_name = t
-        print("({}) {} = {}".format(name, scalar_name, avg))
+    if FLAGS.variant =='odometry':
+        with open('../data/kitti_odom/sequences/%.2d/times.txt' % FLAGS.test_seq, 'r') as f:
+            times = f.readlines()
+        times = np.array([float(s[:-1]) for s in times])
+        poses = np.insert(poses, 0, np.zeros((1, 6)), axis=0)
+        out_file = '../data/kitti_odom/gt_pose/UnFlodometry_results/%.2d_full.txt' % FLAGS.test_seq
+
+        dump_pose_seq_TUM(out_file, poses, times)
+    else:
+        for t, avg in zip(scalar_slots, averages):
+            _, scalar_name = t
+            print("({}) {} = {}".format(name, scalar_name, avg))
 
     return image_lists, image_names
 
+def get_pose_rmse(truth, pred_pose):
+    gtruth_xyz = truth[0,1:4]
+    pred_xyz = pred_pose[0,0:3]
+    offset = gtruth_xyz - pred_xyz
+    pred_xyz += offset
+    scale = tf.reduce_sum(gtruth_xyz * pred_xyz) / tf.reduce_sum(tf.square(pred_xyz))
+    alignment_error = pred_xyz * scale - gtruth_xyz
+    rmse_ = tf.sqrt(tf.reduce_sum(tf.square(alignment_error)))
+    return rmse_
 
 def main(argv=None):
     os.environ['CUDA_VISIBLE_DEVICES'] = FLAGS.gpu

@@ -6,6 +6,7 @@ import matplotlib.image as mpimg
 
 from ..core.data import Data
 from ..util import tryremove
+import tensorflow as tf
 
 URL = 'http://synthia-dataset.cvc.uab.cat/SYNTHIA_SEQS/'
 SEQS = [ # SUMMER and WINTER from sequences `1 - 6`
@@ -47,6 +48,14 @@ class SynthiaData(Data):
                 view_dir = os.path.join(seq_dir, view)
                 dirs.extend([view_dir])
         return dirs
+
+    def get_raw_intrinsics(self, filenames):
+        # filenames : list('../data/kitti_raw/dates/dates_drives/image_cam/data/**.png', ..)
+        intrinsics = []
+        for i in range(len(filenames)):
+            P_rect_tf = tf.constant([[532.7403520000000, 0., 640.0],[0., 532.7403520000000, 380.0],[0., 0., 1.]])
+            intrinsics.append(P_rect_tf)
+        return intrinsics
 
     def _maybe_get_synthia(self):
         seqs = DEV_SEQS if self.development else SEQS

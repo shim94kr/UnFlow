@@ -18,12 +18,15 @@ from .flow_util import flow_error_avg, flow_to_color, flow_error_image, outlier_
 from ..gui import display
 from .util import summarized_placeholder
 from .input import resize_input, resize_output_crop, resize_output, resize_output_flow
+from ..kitti.pose_evaluation_utils import *
+import scipy.misc
 
 
 def restore_networks(sess, params, ckpt, ckpt_path=None):
     finetune = params.get('finetune', [])
     train_all = params.get('train_all', None)
     spec = params.get('flownet', 'S')
+    pose_prediction = params.get('pose_pred')
     flownet_num = len(spec)
 
     net_names = ['flownet_c'] + ['stack_{}_flownet'.format(i+1) for i in range(flownet_num - 1)]
@@ -51,6 +54,9 @@ def restore_networks(sess, params, ckpt, ckpt_path=None):
             nets_to_restore = [net_names[i]]
             variables_to_restore = slim.get_variables_to_restore(
                 include=nets_to_restore)
+            if pose_prediction is None or False:
+                variables_to_restore = [v for v in variables_to_restore
+                                        if not 'pose_pred' in v.name]
             restorer = tf.train.Saver(variables_to_restore)
             restorer.restore(sess, ckpt.model_checkpoint_path)
         except:
@@ -60,6 +66,9 @@ def restore_networks(sess, params, ckpt, ckpt_path=None):
                 include=nets_to_restore)
             variables_to_restore = [v for v in variables_to_restore
                                     if not 'full_res' in v.name]
+            if pose_prediction is None or False:
+                variables_to_restore = [v for v in variables_to_restore
+                                        if not 'pose_pred' in v.name]
             restorer = tf.train.Saver(variables_to_restore)
             restorer.restore(sess, ckpt.model_checkpoint_path)
     return saver
@@ -85,6 +94,20 @@ def _add_image_summaries():
         tensor_name = re.sub('tower_[0-9]*/', '', im.op.name)
         tf.summary.image(tensor_name, im)
 
+def _add_pose_summaries():
+    poses = tf.get_collection('poses')
+    for pose in poses:
+        tf.summary.histogram("tx", pose[:,0])
+        tf.summary.histogram("ty", pose[:,1])
+        tf.summary.histogram("tz", pose[:,2])
+        tf.summary.histogram("rx", pose[:,3])
+        tf.summary.histogram("ry", pose[:,4])
+        tf.summary.histogram("rz", pose[:,5])
+        tf.summary.histogram("sigtx", pose[:,6])
+        tf.summary.histogram("sigty", pose[:,7])
+        tf.summary.histogram("sigtz", pose[:,8])
+        tf.summary.histogram("sigr", pose[:,9])
+
 
 def _eval_plot(results, image_names, title):
     import matplotlib.pyplot as plt
@@ -95,15 +118,17 @@ class Trainer():
     def __init__(self, train_batch_fn, eval_batch_fn, params,
                  train_summaries_dir, eval_summaries_dir, ckpt_dir,
                  normalization, debug=False, experiment="", interactive_plot=False,
-                 supervised=False, devices=None):
+                 supervised=False, devices=None, eval_pose_batch_fn=None, eval_pose_summaries_dir=None):
 
         self.train_summaries_dir = train_summaries_dir
         self.eval_summaries_dir = eval_summaries_dir
+        self.eval_pose_summaries_dir = eval_pose_summaries_dir
         self.ckpt_dir = ckpt_dir
         self.params = params
         self.debug = debug
         self.train_batch_fn = train_batch_fn
         self.eval_batch_fn = eval_batch_fn
+        self.eval_pose_batch_fn = eval_pose_batch_fn
         self.normalization = normalization
         self.experiment = experiment
         self.interactive_plot = interactive_plot
@@ -136,7 +161,7 @@ class Trainer():
 
         print('-- training from i = {} to {}'.format(start_iter, max_iter))
 
-        assert (max_iter - start_iter + 1) % save_interval == 0
+        #assert (max_iter - start_iter + 1) % save_interval == 0
         for i in range(start_iter, max_iter + 1, save_interval):
             self.train(i, i + save_interval - 1, i - (min_iter + 1))
             self.eval(1)
@@ -153,8 +178,9 @@ class Trainer():
         def _add_summaries():
             _add_loss_summaries()
             _add_param_summaries()
-            if self.debug:
-                _add_image_summaries()
+            _add_pose_summaries()
+            #if self.debug:
+            _add_image_summaries()
 
         if len(self.devices) == 1:
             loss_ = self.loss_fn(batch, self.params, self.normalization)
@@ -292,7 +318,6 @@ class Trainer():
                        1 - (1 - occlusion(flow, flow_bw)[0]) * create_outgoing_mask(flow) ,
                        forward_warp(flow_bw) < DISOCC_THRESH]
             image_names = ['warped image', 'flow', 'occ', 'reverse disocc']
-
             values_ = []
             averages_ = []
             truth_tuples = []
@@ -319,7 +344,6 @@ class Trainer():
                                                       key='eval_avg')
                 values_.extend([error_, outliers_])
                 averages_.extend([error_avg_, outliers_avg])
-
             losses = tf.get_collection('losses')
             for l in losses:
                 values_.append(l)
@@ -383,6 +407,132 @@ class Trainer():
                                                    "{} (i={})".format(self.experiment,
                                                                       global_step)))
                     self.plot_proc.start()
+
+    def eval_pose_manual(self):
+        current_dir = '../data'
+        image_dir = 'kitti_odom/sequences'
+        output_file = '../pose_data/09_full.txt'
+        test_sequences_image = ['09']
+        filenames_1 = []
+        filenames_2 = []
+        results = [[0.,0.,0.,0.,0.,0.]]
+        times = []
+
+        ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+        assert ckpt is not None, "No checkpoints to evaluate"
+
+        with tf.Session() as sess:
+            restore_networks(sess, self.params, ckpt)
+
+            for sequence in test_sequences_image:
+                with open(current_dir + image_dir +'%.2d/times.txt' % sequence, 'r') as f:
+                    times = f.readlines()
+                times = np.array([float(s[:-1]) for s in times])
+
+                image_02_folder = os.path.join(current_dir, image_dir, sequence, 'image_2/')
+                image_files = os.listdir(image_02_folder)
+
+                image_files.sort()
+
+                for i in range(len(image_files) - 1):
+                    filenames_1.append(os.path.join(image_02_folder, image_files[i]))
+                    filenames_2.append(os.path.join(image_02_folder, image_files[i + 1]))
+
+                for file1, file2 in zip(filenames_1, filenames_2):
+                    img1 = tf.cast(tf.constant(scipy.misc.imread(file1)), dtype=tf.float32)
+                    img2 = tf.cast(tf.constant(scipy.misc.imread(file2)), dtype=tf.float32)
+                    height, width, _ = tf.unstack(tf.shape(img1), num=3, axis=0)
+                    img1 = resize_input(img1, height, width, 384, 1280)
+                    img2 = resize_input(img2, height, width, 384, 1280)
+
+                    _, pose, _ = unsupervised_loss(
+                        (img1, img2),
+                        params=self.params,
+                        normalization=self.normalization,
+                        augment=False, return_pose=True)
+
+                    results.append(sess.run(pose))
+
+        dump_pose_seq_TUM(output_file, results, times)
+
+    def eval_pose(self, num):
+        assert num == 1 # TODO enable num > 1
+
+        with tf.Graph().as_default():
+            inputs = self.eval_pose_batch_fn()
+            im1, im2, input_shape = inputs[:3]
+            truths = inputs[3:]
+
+            height, width, _ = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
+
+            im1 = resize_input(im1, height, width, 384, 1280)
+            im2 = resize_input(im2, height, width, 384, 1280)
+
+            variables_to_restore = tf.all_variables()
+
+            values_ = []
+            averages_ = []
+            if len(truths) == 1:
+                gtruth_xyz = truths[0:3]
+                pred_xyz = pose[0:3]
+                offset = gtruth_xyz - pred_xyz
+                pred_xyz +=offset
+                scale = tf.reduce_sum(gtruth_xyz * pred_xyz)/tf.reduce_sum(tf.square(pred_xyz))
+                alignment_error = pred_xyz * scale - gtruth_xyz
+                rmse_ = tf.sqrt(tf.reduce_sum(tf.square(alignment_error)))
+                rmse_avg = summarized_placeholder('rmse/pose', key='eval_pose_avg')
+
+                values_.extend([rmse_])
+                averages_.extend([rmse_avg])
+            else:
+                raise NotImplementedError()
+                truth_tuples.append(('flow', truths[0], truths[1]))
+
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            assert ckpt is not None, "No checkpoints to evaluate"
+
+            # Correct path for ckpts from different machine
+            # ckpt_path = self.ckpt_dir + "/" + os.path.basename(ckpt.model_checkpoint_path)
+            ckpt_path = ckpt.model_checkpoint_path
+
+            with tf.Session() as sess:
+                summary_writer = tf.summary.FileWriter(self.eval_pose_summaries_dir)
+                saver = tf.train.Saver(variables_to_restore)
+
+                sess.run(tf.global_variables_initializer())
+                sess.run(tf.local_variables_initializer())
+
+                restore_networks(sess, self.params, ckpt)
+                global_step = ckpt_path.split('/')[-1].split('-')[-1]
+
+                coord = tf.train.Coordinator()
+                threads = tf.train.start_queue_runners(sess=sess,
+                                                       coord=coord)
+                averages = np.zeros(len(averages_))
+                num_iters = 0
+
+                try:
+                    while not coord.should_stop():
+                        results = sess.run(values_)
+                        values = results[:len(averages_)]
+                        averages += values
+                        num_iters += 1
+                        print(num_iters)
+                except tf.errors.OutOfRangeError:
+                    pass
+
+                averages /= num_iters
+                feed = {k: v for (k, v) in zip(averages_, averages)}
+
+                summary_ = tf.summary.merge_all('eval_pose_avg')
+                summary = sess.run(summary_, feed_dict=feed)
+                summary_writer.add_summary(summary, global_step)
+
+                print("-- eval_pose: i = {}".format(global_step))
+
+                coord.request_stop()
+                coord.join(threads)
+                summary_writer.close()
 
 
 def average_gradients(tower_grads):

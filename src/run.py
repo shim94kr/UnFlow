@@ -58,6 +58,10 @@ def main(argv=None):
                         batch_size=1,
                         normalize=False,
                         dims=(384, 1280))
+    epinput = KITTIInput(data=kdata,
+                        batch_size=1,
+                        normalize=False,
+                        dims=(384, 1280))
 
     if train_dataset == 'chairs':
         cconfig = copy.deepcopy(experiment.config['train'])
@@ -100,7 +104,8 @@ def main(argv=None):
         tr = Trainer(
               lambda shift: kinput.input_raw(swap_images=False,
                                              center_crop=True,
-                                             shift=shift * run_config['batch_size']),
+                                             shift=shift * run_config['batch_size'],
+                                             epipolar_weight=kconfig.get('epipolar_weight', None)),
               lambda: einput.input_train_2012(),
               params=kconfig,
               normalization=kinput.get_normalization(),
@@ -110,7 +115,9 @@ def main(argv=None):
               ckpt_dir=experiment.save_dir,
               debug=FLAGS.debug,
               interactive_plot=run_config.get('interactive_plot'),
-              devices=devices)
+              devices=devices,
+              eval_pose_batch_fn=lambda: epinput.input_odometry(),
+              eval_pose_summaries_dir=experiment.eval_pose_dir)
         tr.run(0, kiters)
 
     elif train_dataset == 'cityscapes':
@@ -159,7 +166,9 @@ def main(argv=None):
                             dims=(sconfig['height'], sconfig['width']))
         tr = Trainer(
               lambda shift: sinput.input_raw(swap_images=False,
-                                             shift=shift * run_config['batch_size']),
+                                             center_crop=True,
+                                             shift=shift * run_config['batch_size'],
+                                             epipolar_weight=sconfig.get('epipolar_weight', None)),
               lambda: einput.input_train_2012(),
               params=sconfig,
               normalization=sinput.get_normalization(),

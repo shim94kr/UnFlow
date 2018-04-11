@@ -3,6 +3,7 @@ import sys
 
 import numpy as np
 import matplotlib.image as mpimg
+import tensorflow as tf
 
 from . import raw_records
 from ..core.data import Data
@@ -55,7 +56,7 @@ def exclude_test_and_train_images(kitti_dir, exclude_lists_dir, exclude_target_d
                     image = splits[-1]
                     seq_str = splits[0]
                     day_name, seq_name = seq_str.split('_drive_')
-                    seq_name = seq_name.split('_')[0] + '_extract'
+                    seq_name = seq_name.split('_')[0] + '_sync'
                     seq_str = day_name + '_drive_' + seq_name
                     exclude_from_seq(day_name, seq_str, image, 'image_02')
                     exclude_from_seq(day_name, seq_str, image, 'image_03')
@@ -97,18 +98,35 @@ class KITTIData(Data):
         self._maybe_get_kitti_2015()
 
     def get_raw_dirs(self):
-       top_dir = os.path.join(self.current_dir, 'kitti_raw')
-       dirs = []
-       dates = os.listdir(top_dir)
-       for date in dates:
-           date_path = os.path.join(top_dir, date)
-           extracts = os.listdir(date_path)
-           for extract in extracts:
-               extract_path = os.path.join(date_path, extract)
-               image_02_folder = os.path.join(extract_path, 'image_02/data')
-               image_03_folder = os.path.join(extract_path, 'image_03/data')
-               dirs.extend([image_02_folder, image_03_folder])
-       return dirs
+        top_dir = os.path.join(self.current_dir, 'kitti_raw')
+        dirs = []
+        dates = os.listdir(top_dir)
+        for date in dates:
+            date_path = os.path.join(top_dir, date)
+            if os.path.isdir(date_path):
+                extracts = os.listdir(date_path)
+                for extract in extracts:
+                    extract_path = os.path.join(date_path, extract)
+                    if os.path.isdir(extract_path):
+                        image_02_folder = os.path.join(extract_path, 'image_02/data')
+                        image_03_folder = os.path.join(extract_path, 'image_03/data')
+                        dirs.extend([image_02_folder, image_03_folder])
+        return dirs
+
+    def get_raw_intrinsics(self, filenames):
+        # filenames : list('../data/kitti_raw/dates/dates_drives/image_cam/data/**.png', ..)
+        intrinsics = []
+        for file in filenames:
+            top_dir = os.path.join(self.current_dir, 'kitti_raw')
+            date = file.split('kitti_raw/')[1].split('/')[0]
+            cam = file.split('image_')[1].split('/')[0]
+            calib_file = os.path.join(top_dir, date, 'calib_cam_to_cam.txt')
+
+            filedata = self.read_raw_calib_file(calib_file)
+            P_rect = np.reshape(filedata['P_rect_' + cam], (3, 4))
+            P_rect_tf = tf.constant(P_rect[:3,:3])
+            intrinsics.append(P_rect_tf)
+        return intrinsics
 
     def _maybe_get_kitti_2012(self):
         local_path = os.path.join(self.data_dir, 'data_stereo_flow')
@@ -128,7 +146,7 @@ class KITTIData(Data):
           
         for i, record in enumerate(records):
             date_str = record.split("_drive_")[0]
-            foldername = record + "_extract"
+            foldername = record + "_sync"
             date_folder = os.path.join(local_dir, date_str)
             if not os.path.isdir(date_folder):
                 os.makedirs(date_folder)
@@ -144,10 +162,33 @@ class KITTIData(Data):
             tryremove(os.path.join(local_path, 'oxts'))
             tryremove(os.path.join(local_path, 'image_00'))
             tryremove(os.path.join(local_path, 'image_01'))
-            
+
         if downloaded_records:
             print("Downloaded all KITTI raw files.")
             exclude_target_dir = os.path.join(self.data_dir, 'exclude_target_dir')
             exclude_lists_dir = '../files/kitti_excludes'
-            excluded = exclude_test_and_train_images(local_dir, exclude_lists_dir, exclude_target_dir,
-                                                     remove=True)
+            excluded = exclude_test_and_train_images(local_dir, exclude_lists_dir, exclude_target_dir, remove=True)
+
+    def read_raw_calib_file(self,filepath):
+        # From https://github.com/utiasSTARS/pykitti/blob/master/pykitti/utils.py
+        """Read in a calibration file and parse into a dictionary."""
+        data = {}
+
+        with open(filepath, 'r') as f:
+            for line in f.readlines():
+                key, value = line.split(':', 1)
+                # The only non-float values in these files are dates, which
+                # we don't care about anyway
+                try:
+                        data[key] = np.array([float(x) for x in value.split()])
+                except ValueError:
+                        pass
+        return data
+
+    def scale_intrinsics(self, mat, sx, sy):
+        out = np.copy(mat)
+        out[0,0] *= sx
+        out[0,2] *= sx
+        out[1,1] *= sy
+        out[1,2] *= sy
+        return out

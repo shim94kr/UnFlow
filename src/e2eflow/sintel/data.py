@@ -6,6 +6,7 @@ import matplotlib.image as mpimg
 
 from ..core.data import Data
 from ..util import tryremove
+import tensorflow as tf
 
 
 class SintelData(Data):
@@ -31,3 +32,11 @@ class SintelData(Data):
             for sub_dir in os.listdir(top_dir):
               dirs.append(os.path.join(top_dir, sub_dir))
         return dirs
+
+    def get_raw_intrinsics(self, filenames):
+        # filenames : list('../data/kitti_raw/dates/dates_drives/image_cam/data/**.png', ..)
+        intrinsics = []
+        for i in range(len(filenames)):
+            P_rect_tf = tf.constant([[32., 0., 511.5],[0., 32., 217.5],[0., 0., 1.]])
+            intrinsics.append(P_rect_tf)
+        return intrinsics

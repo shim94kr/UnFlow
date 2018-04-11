@@ -7,6 +7,7 @@ import matplotlib.image as mpimg
 from ..core.data import Data
 from ..util import tryremove
 
+import tensorflow as tf
 
 class MiddleburyData(Data):
     MDB_FLOW_URL = 'http://vision.middlebury.edu/flow/data/comp/zip/other-gt-flow.zip'
@@ -33,3 +34,11 @@ class MiddleburyData(Data):
 
     def get_raw_dirs(self):
         raise NotImplementedError("Can not train on middlebury")
+
+    def get_raw_intrinsics(self, filenames):
+        # filenames : list('../data/kitti_raw/dates/dates_drives/image_cam/data/**.png', ..)
+        intrinsics = []
+        for i in range(len(filenames)):
+            P_rect_tf = tf.constant([[3997.684, 0., 1176.728],[0., 3997.684, 1011.728],[0, 0, 1]])
+            intrinsics.append(P_rect_tf)
+        return intrinsics

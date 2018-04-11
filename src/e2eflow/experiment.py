@@ -16,6 +16,7 @@ class Experiment():
 
         train_dir = os.path.join(log_dir, 'train')
         eval_dir = os.path.join(log_dir, 'eval')
+        eval_pose_dir = os.path.join(log_dir, 'eval_pose')
         save_dir = os.path.join(dirs['checkpoints'], name)
 
         def _init_dirs():
@@ -53,6 +54,7 @@ class Experiment():
 
         self.train_dir = train_dir
         self.eval_dir = eval_dir
+        self.eval_pose_dir = eval_pose_dir
         self.save_dir = save_dir
         self.log_dir = log_dir
         self.name = name

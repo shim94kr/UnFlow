@@ -3,8 +3,10 @@ import random
 
 import numpy as np
 import tensorflow as tf
+import scipy.misc
 
 from .augment import random_crop
+from .losses import create_border_mask
 
 
 def resize_input(t, height, width, resized_h, resized_w):
@@ -15,7 +17,7 @@ def resize_input(t, height, width, resized_h, resized_w):
 
 
 def resize_output_crop(t, height, width, channels):
-    _, oldh, oldw, c = tf.unstack(tf.shape(t))
+    _, oldh, oldw, c = tf.unstack(tf.shape(t), num=4)
     t = tf.reshape(t, [oldh, oldw, c])
     t = tf.image.resize_image_with_crop_or_pad(t, height, width)
     return tf.reshape(t, [1, height, width, channels])
@@ -120,7 +122,7 @@ class Input():
 
     def input_raw(self, swap_images=True, sequence=True,
                   needs_crop=True, shift=0, seed=0,
-                  center_crop=False, skip=0):
+                  center_crop=False, skip=0, epipolar_weight=None):
         """Constructs input of raw data.
 
         Args:
@@ -184,27 +186,52 @@ class Input():
         filenames_2 = list(filenames_2)
 
         with tf.variable_scope('train_inputs'):
-            image_1 = read_png_image(filenames_1)
-            image_2 = read_png_image(filenames_2)
+            if epipolar_weight is not None:
+                intrinsics = self.data.get_raw_intrinsics(filenames_1)
+                input_queue = tf.train.slice_input_producer([filenames_1, filenames_2, intrinsics],
+                                                            shuffle=False)
+                image_1, image_2 = read_images_from_disk(input_queue[0:2])
+                intrinsic = input_queue[2]
 
-            if needs_crop:
-                #if center_crop:
-                #    image_1 = tf.image.resize_image_with_crop_or_pad(image_1, height, width)
-                #    image_2 = tf.image.resize_image_with_crop_or_pad(image_1, height, width)
-                #else:
-                image_1, image_2 = random_crop([image_1, image_2], [height, width, 3])
+                image_1, image_2, intrinsic = random_crop([image_1, image_2], [height, width, 3], intrinsic=intrinsic)
+
+                return tf.train.batch(
+                    [image_1, image_2, intrinsic],
+                    batch_size=self.batch_size)
+
             else:
-                image_1 = tf.reshape(image_1, [height, width, 3])
-                image_2 = tf.reshape(image_2, [height, width, 3])
+                input_queue = tf.train.slice_input_producer([filenames_1, filenames_2],
+                                                            shuffle=False)
+                image_1, image_2 = read_images_from_disk(input_queue)
 
-            if self.normalize:
-                image_1 = self._normalize_image(image_1)
-                image_2 = self._normalize_image(image_2)
+                if needs_crop:
+                    #if center_crop:
+                    #    image_1 = tf.image.resize_image_with_crop_or_pad(image_1, height, width)
+                    #    image_2 = tf.image.resize_image_with_crop_or_pad(image_1, height, width)
+                    #else:
+                    image_1, image_2 = random_crop([image_1, image_2], [height, width, 3])
+                else:
+                    image_1 = tf.reshape(image_1, [height, width, 3])
+                    image_2 = tf.reshape(image_2, [height, width, 3])
 
-            return tf.train.batch(
-                [image_1, image_2],
-                batch_size=self.batch_size,
-                num_threads=self.num_threads)
+                if self.normalize:
+                    image_1 = self._normalize_image(image_1)
+                    image_2 = self._normalize_image(image_2)
+
+                return tf.train.batch(
+                    [image_1, image_2],
+                    batch_size=self.batch_size,
+                    num_threads=self.num_threads)
+
+def read_images_from_disk(input_queue, num_epochs=None):
+    file_contents1 = tf.read_file(input_queue[0])
+    file_contents2 = tf.read_file(input_queue[1])
+    example1 = tf.image.decode_png(file_contents1, channels=3)
+    example2 = tf.image.decode_png(file_contents2, channels=3)
+
+    image1 = tf.cast(example1, tf.float32)
+    image2 = tf.cast(example2, tf.float32)
+    return image1, image2
 
 
 def read_png_image(filenames, num_epochs=None):
