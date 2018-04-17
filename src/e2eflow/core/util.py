@@ -140,21 +140,19 @@ def posegrid_vec2mat(posegrid):
       rotation grid -- [B, H, W, 3, 3], translation grid -- [B, H, W, 3]
   """
   batch_size, H, W, _ = tf.unstack(tf.shape(posegrid))
+  posegrid = posegrid * 0.1
   sigtx = tf.exp(-relu_x(tf.slice(posegrid, [0, 0, 0, 6], [-1, -1, -1, 1])))
   sigty = tf.exp(-relu_x(tf.slice(posegrid, [0, 0, 0, 7], [-1, -1, -1, 1])))
   sigtz = tf.exp(-relu_x(tf.slice(posegrid, [0, 0, 0, 8], [-1, -1, -1, 1])))
-  sigrx = tf.exp(-tf.nn.relu(tf.slice(posegrid, [0, 0, 0, 9], [-1, -1, -1, 1])))
-  sigry = tf.exp(-tf.nn.relu(tf.slice(posegrid, [0, 0, 0, 10], [-1, -1, -1, 1])))
-  sigrz = tf.exp(-tf.nn.relu(tf.slice(posegrid, [0, 0, 0, 11], [-1, -1, -1, 1])))
   tx = tf.slice(posegrid, [0, 0, 0, 0], [-1, -1, -1, 1]) * sigtx
   ty = tf.slice(posegrid, [0, 0, 0, 1], [-1, -1, -1, 1]) * sigty
   tz = tf.slice(posegrid, [0, 0, 0, 2], [-1, -1, -1, 1]) * sigtz
-  rx = 0.01 * tf.slice(posegrid, [0, 0, 0, 3], [-1, -1, -1, 1]) * sigrx
-  ry = 0.01 * tf.slice(posegrid, [0, 0, 0, 4], [-1, -1, -1, 1]) * sigry
-  rz = 0.01 * tf.slice(posegrid, [0, 0, 0, 5], [-1, -1, -1, 1]) * sigrz
+  rx = tf.slice(posegrid, [0, 0, 0, 3], [-1, -1, -1, 1])
+  ry = tf.slice(posegrid, [0, 0, 0, 4], [-1, -1, -1, 1])
+  rz = tf.slice(posegrid, [0, 0, 0, 5], [-1, -1, -1, 1])
   translation = tf.concat([tx, ty, tz], axis = 3)
   rot_mat = eulergrid2mat(rz, ry, rx)
-  return rot_mat, translation, tf.concat([sigtx, sigty, sigtz, sigrx, sigry, sigrz], axis=3), tf.concat([translation, rx, ry, rz], axis=3)
+  return rot_mat, translation, tf.concat([sigtx, sigty, sigtz], axis=3), tf.concat([translation, rx, ry, rz], axis=3)
 
 def pose_vec2mat(vec):
   """Converts 6DoF parameters to transformation matrix

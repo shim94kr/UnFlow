@@ -382,7 +382,7 @@ def _pose_second_order_deltas(pose):
         weight_array[:, :, 0, 3] = filter_diag2
         weights = tf.constant(weight_array, dtype=tf.float32)
 
-        pose_tx, pose_ty, pose_tz, pose_rx, pose_ry, pose_rz, sig_tx, sig_ty, sig_tz, sig_rx, sig_ry, sig_rz = tf.split(axis=3, num_or_size_splits=12, value=pose)
+        pose_tx, pose_ty, pose_tz, pose_rx, pose_ry, pose_rz, sig_tx, sig_ty, sig_tz = tf.split(axis=3, num_or_size_splits=9, value=pose)
         delta_tx = conv2d(pose_tx, weights)
         delta_ty = conv2d(pose_ty, weights)
         delta_tz = conv2d(pose_tz, weights)
@@ -392,15 +392,12 @@ def _pose_second_order_deltas(pose):
         delta_sigtx = conv2d(sig_tx, weights)
         delta_sigty = conv2d(sig_ty, weights)
         delta_sigtz = conv2d(sig_tz, weights)
-        delta_sigrx = conv2d(sig_rx, weights)
-        delta_sigry = conv2d(sig_ry, weights)
-        delta_sigrz = conv2d(sig_rz, weights)
-        return delta_tx, delta_ty, delta_tz, delta_rx, delta_ry, delta_rz, delta_sigtx, delta_sigty, delta_sigtz, delta_sigrx, delta_sigry, delta_sigrz, mask
+        return delta_tx, delta_ty, delta_tz, delta_rx, delta_ry, delta_rz, delta_sigtx, delta_sigty, delta_sigtz, mask
 
 
 def pose_second_order_loss(pose):
     with tf.variable_scope('pose_second_order_loss'):
-        delta_tx, delta_ty, delta_tz, delta_rx, delta_ry, delta_rz, delta_sigtx, delta_sigty, delta_sigtz, delta_sigrx, delta_sigry, delta_sigrz, mask = _pose_second_order_deltas(pose)
+        delta_tx, delta_ty, delta_tz, delta_rx, delta_ry, delta_rz, delta_sigtx, delta_sigty, delta_sigtz, mask = _pose_second_order_deltas(pose)
         loss_tx = charbonnier_loss(delta_tx, mask)
         loss_ty = charbonnier_loss(delta_ty, mask)
         loss_tz = charbonnier_loss(delta_tz, mask)
@@ -410,10 +407,7 @@ def pose_second_order_loss(pose):
         loss_sigtx = charbonnier_loss(delta_sigtx, mask)
         loss_sigty = charbonnier_loss(delta_sigty, mask)
         loss_sigtz = charbonnier_loss(delta_sigtz, mask)
-        loss_sigrx = charbonnier_loss(delta_sigrx, mask)
-        loss_sigry = charbonnier_loss(delta_sigry, mask)
-        loss_sigrz = charbonnier_loss(delta_sigrz, mask)
-        return loss_tx + loss_ty + loss_tz + loss_rx + loss_ry + loss_rz + loss_sigtx + loss_sigty + loss_sigtz + loss_sigrx + loss_sigry + loss_sigrz
+        return loss_tx + loss_ty + loss_tz + loss_rx + loss_ry + loss_rz + loss_sigtx + loss_sigty + loss_sigtz
 
 
 def _second_order_deltas(flow):

@@ -132,13 +132,13 @@ def _evaluate_experiment(name, input_fn, data_input):
             _, pose, _, flow, flow_bw = unsupervised_loss(
                 (im1, im2),
                 normalization=data_input.get_normalization(),
-                params=params, augment=False, return_pose=True)
+                params=params, augment=False, return_pose=True, is_training=False)
 
         else:
             _, flow, flow_bw = unsupervised_loss(
                 (im1, im2),
                 normalization=data_input.get_normalization(),
-                params=params, augment=False, return_flow=True)
+                params=params, augment=False, return_flow=True, is_training=False)
 
         im1 = resize_output(im1, height, width, 3)
         im2 = resize_output(im2, height, width, 3)

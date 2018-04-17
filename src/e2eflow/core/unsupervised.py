@@ -10,6 +10,7 @@ from ..ops import downsample
 from .image_warp import image_warp
 from .flownet import flownet, FLOW_SCALE
 from .augment import get_multi_scale_intrinsics
+from .discriminator import discriminator
 
 
 POSE_SCALE = 0.0001
@@ -27,7 +28,7 @@ def _track_image(op, name):
 
 
 def unsupervised_loss(batch, params, normalization=None, augment=True,
-                      return_flow=False, return_pose=False):
+                      return_flow=False, return_pose=False, is_training = True):
     intrinsics1 = []
     if len(batch) == 3:
         im1, im2, intrinsics1 = batch
@@ -36,6 +37,7 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
     im1 = im1 / 255.0
     im2 = im2 / 255.0
     im_shape = tf.shape(im1)[1:3]
+    b, h, w, c = im1.get_shape().as_list()
     channel_mean = tf.constant(normalization[0]) / 255.0
     # -------------------------------------------------------------------------
     # Data & mask augmentation
@@ -77,8 +79,8 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             brightness_stddev=0.02, min_colour=0.9, max_colour=1.1,
             min_gamma=0.7, max_gamma=1.5)
 
-        _track_image(im1_photo, 'augmented1')
-        _track_image(im2_photo, 'augmented2')
+        #_track_image(im1_photo, 'augmented1')
+        #_track_image(im2_photo, 'augmented2')
     else:
         im1_geo, im2_geo = im1, im2
         im1_photo, im2_photo = im1, im2
@@ -93,6 +95,7 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
     flownet_spec = params.get('flownet', 'S')
     full_resolution = params.get('full_res')
     pose_prediction = params.get('pose_pred')
+    util_GAN = params.get('util_gan')
     train_all = params.get('train_all')
 
     flows_fw, flows_bw, flows2_fw, flows2_bw, poses_fw, poses_bw = flownet(im1_photo, im2_photo,
@@ -136,6 +139,57 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
     for loss in LOSSES:
         combined_losses[loss] = 0.0
 
+    # Build the fake discriminator
+    if util_GAN:
+        if full_resolution:
+            im1_d = tf.reshape(im1_photo, [b, h, w, c])
+            im2_d = tf.reshape(im1_photo, [b, h, w, c])
+            im1_warped = tf.reshape(image_warp(im1_d, flows_bw[0] * final_flow_scale), [b, h, w, c])
+            im2_warped = tf.reshape(image_warp(im2_d, flows_fw[0] * final_flow_scale), [b, h, w, c])
+            boxes = tf.constant([np.int(h*0.2), np.int(w*0.2), np.int(h*0.6), np.int(w*0.6)])
+            im1_d = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im1_d, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            im2_d = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im2_d, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            im1_warped = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im1_warped, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            im2_warped = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im2_warped, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            _track_image(im1_d, 'origin1')
+            _track_image(im2_d, 'origin2')
+            _track_image(im2_warped, 'synthesized1')
+            _track_image(im1_warped, 'synthesized2')
+        else:
+            im1_d = tf.reshape(downsample(im1_photo, 4), [b, np.int(h/4), np.int(w/4), c])
+            im2_d = tf.reshape(downsample(im2_photo, 4), [b, np.int(h/4), np.int(w/4), c])
+            im1_warped = tf.reshape(image_warp(im1_d, flows_bw[0] * final_flow_scale), [b, np.int(h/4), np.int(w/4), c])
+            im2_warped = tf.reshape(image_warp(im2_d, flows_fw[0] * final_flow_scale), [b, np.int(h/4), np.int(w/4), c])
+            boxes = tf.constant([np.int(h*0.05), np.int(w*0.05), np.int(h*0.15), np.int(w*0.15)])
+            im1_d = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im1_d, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            im2_d = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im2_d, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            im1_warped = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im1_warped, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            im2_warped = tf.image.resize_bilinear(tf.image.crop_to_bounding_box(im2_warped, boxes[0], boxes[1], boxes[2], boxes[3]), [np.int(h/4), np.int(w/4)])
+            _track_image(im1_d, 'origin1')
+            _track_image(im2_d, 'origin2')
+            _track_image(im2_warped, 'synthesized1')
+            _track_image(im1_warped, 'synthesized2')
+        with tf.name_scope('fake_discriminator'):
+            with tf.variable_scope('discriminator'):
+                discrim_fake_output1 = discriminator(im2_warped, is_training=is_training, reuse=False)
+                discrim_fake_output2 = discriminator(im1_warped, is_training=is_training, reuse=True)
+
+        # Build the real discriminator
+        with tf.name_scope('real_discriminator'):
+            with tf.variable_scope('discriminator'):
+                discrim_real_output1 = discriminator(im1_d, is_training=is_training, reuse=True)
+                discrim_real_output2 = discriminator(im2_d, is_training=is_training, reuse=True)
+
+        # Calculating the discriminator loss
+        with tf.variable_scope('discriminator_loss'):
+            discrim_fake_loss = tf.log(1 - discrim_fake_output1 + 1e-12) + tf.log(1 - discrim_fake_output2 + 1e-12)
+            discrim_real_loss = tf.log(discrim_real_output1 + 1e-12) + tf.log(discrim_real_output2 + 1e-12)
+
+            discrim_loss = tf.reduce_mean(-(discrim_fake_loss + discrim_real_loss))
+
+        with tf.variable_scope('adversarial_loss'):
+            adversarial_loss = tf.reduce_mean(-tf.log(discrim_fake_output1 + 1e-12)-tf.log(discrim_fake_output2 + 1e-12))
+
     if params.get('pyramid_loss'):
         flow_enum = enumerate(zip(flows_fw, flows_bw))
     else:
@@ -153,11 +207,6 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             flow_fw_s, flow_bw_s = flow_pair
             mask_occlusion = params.get('mask_occlusion', '')
             assert mask_occlusion in ['fb', 'disocc', '', 'both']
-            """
-            if "P" in flownet_spec:
-                poses_fw[i] = POSE_SCALE * poses_fw[i]
-                poses_bw[i] = POSE_SCALE * poses_bw[i]
-            """
             if len(batch) == 3:
                 losses, pose_fw_all, pose_bw_all = compute_losses(im1_s, im2_s,
                             flow_fw_s * flow_scale, flow_bw_s * flow_scale,
@@ -195,11 +244,17 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             im2_s = downsample(im2_s, 2)
             mask_s = downsample(mask_s, 2)
 
+
     if len(batch) == 3:
         tf.add_to_collection('poses', tf.identity(mean_pose_fw, name='pose_fw'))
         tf.add_to_collection('poses', tf.identity(mean_pose_bw, name='pose_bw'))
+
     regularization_loss = tf.losses.get_regularization_loss()
     final_loss = combined_loss + regularization_loss
+    if util_GAN:
+        final_loss += 0.001 * adversarial_loss
+        _track_loss(adversarial_loss, 'loss/adversarial')
+        _track_loss(discrim_loss, 'loss/discrim')
 
     _track_loss(final_loss, 'loss/combined')
 
@@ -211,8 +266,10 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             tf.add_to_collection('params', weight)
 
     if return_flow:
-        return final_loss, final_flow_fw, final_flow_bw
+        return final_loss + discrim_loss, final_flow_fw, final_flow_bw
     elif return_pose:
-        return final_loss, poses_fw, poses_bw, final_flow_fw, final_flow_bw
+        return final_loss + discrim_loss, poses_fw, poses_bw, final_flow_fw, final_flow_bw
+    elif util_GAN:
+        return final_loss, discrim_loss
     else:
         return final_loss

@@ -183,30 +183,84 @@ class Trainer():
             _add_image_summaries()
 
         if len(self.devices) == 1:
-            loss_ = self.loss_fn(batch, self.params, self.normalization)
-            train_op = opt.minimize(loss_)
+            if self.params['util_gan']:
+                gen_loss, discrim_loss = self.loss_fn(batch, self.params, self.normalization)
+                loss_ = gen_loss + discrim_loss
+                with tf.variable_scope('dicriminator_train'):
+                    discrim_tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                                      scope='discriminator')
+                    discrim_optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.9)
+                    discrim_grads_and_vars = discrim_optimizer.compute_gradients(discrim_loss,
+                                                                                 discrim_tvars)
+                    discrim_train = discrim_optimizer.apply_gradients(discrim_grads_and_vars)
+
+                with tf.variable_scope('generator_train'):
+                    # Need to wait discriminator to perform train step
+                    with tf.control_dependencies(
+                                    [discrim_train] + tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                        gen_tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+                        gen_tvars = [v for v in gen_tvars
+                                                if not 'discriminator' in v.name]
+                        gen_optimizer = tf.train.AdamOptimizer(beta1=0.9, beta2=0.999, learning_rate=learning_rate)
+                        gen_grads_and_vars = gen_optimizer.compute_gradients(gen_loss, gen_tvars)
+                        train_op = gen_optimizer.apply_gradients(gen_grads_and_vars)
+            else:
+                loss_ = self.loss_fn(batch, self.params, self.normalization)
+                train_op = opt.minimize(loss_)
             _add_summaries()
         else:
             tower_grads = []
+            tower_grads_d = []
             with tf.variable_scope(tf.get_variable_scope()):
                 for i, devid in enumerate(self.devices):
                     with tf.device(devid):
                         with tf.name_scope('tower_{}'.format(i)) as scope:
-                            loss_ = self.loss_fn(batch, self.params, self.normalization)
-                            _add_summaries()
+                            if self.params['util_gan']:
+                                gen_loss, discrim_loss = self.loss_fn(batch, self.params, self.normalization)
+                                loss_ = gen_loss + discrim_loss
 
-                            # Reuse variables for the next tower.
-                            tf.get_variable_scope().reuse_variables()
+                                _add_summaries()
 
-                            # Retain the summaries from the final tower.
-                            tower_summaries = tf.get_collection(tf.GraphKeys.SUMMARIES,
-                                                                scope)
-                            grads = opt.compute_gradients(loss_)
-                            tower_grads.append(grads)
+                                # Reuse variables for the next tower.
+                                tf.get_variable_scope().reuse_variables()
+
+                                with tf.variable_scope('dicriminator_train'):
+                                    discrim_tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                                                      scope='discriminator')
+                                    discrim_optimizer = tf.train.AdamOptimizer(learning_rate, beta1=0.9)
+                                    discrim_grads_and_vars = discrim_optimizer.compute_gradients(discrim_loss,
+                                                                                                 discrim_tvars)
+                                    tower_grads_d.append(discrim_grads_and_vars)
+
+                                with tf.variable_scope('generator_train'):
+                                    gen_tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+                                    gen_tvars = [v for v in gen_tvars
+                                                 if not 'discriminator' in v.name]
+                                    gen_optimizer = tf.train.AdamOptimizer(beta1=0.9, beta2=0.999, learning_rate=learning_rate)
+                                    gen_grads_and_vars = gen_optimizer.compute_gradients(gen_loss, gen_tvars)
+                                    tower_grads.append(gen_grads_and_vars)
+                            else:
+                                loss_ = self.loss_fn(batch, self.params, self.normalization)
+
+                                _add_summaries()
+
+                                # Reuse variables for the next tower.
+                                tf.get_variable_scope().reuse_variables()
+
+                                # Retain the summaries from the final tower.
+                                tower_summaries = tf.get_collection(tf.GraphKeys.SUMMARIES,
+                                                                    scope)
+                                grads = opt.compute_gradients(loss_)
+                                tower_grads.append(grads)
 
             grads = average_gradients(tower_grads)
             apply_gradient_op = opt.apply_gradients(grads)
             train_op = apply_gradient_op
+            if self.params['util_gan']:
+                grads_d = average_gradients(tower_grads_d)
+                apply_gradient_op = opt.apply_gradients(grads_d)
+                train_op_d = apply_gradient_op
+                return tf.group(train_op_d, train_op), loss_
 
         return train_op, loss_
 
@@ -304,7 +358,7 @@ class Trainer():
                 (im1, im2),
                 params=self.params,
                 normalization=self.normalization,
-                augment=False, return_flow=True)
+                augment=False, return_flow=True, is_training=False)
 
             im1 = resize_output(im1, height, width, 3)
             im2 = resize_output(im2, height, width, 3)
@@ -449,7 +503,7 @@ class Trainer():
                         (img1, img2),
                         params=self.params,
                         normalization=self.normalization,
-                        augment=False, return_pose=True)
+                        augment=False, return_pose=True, is_training=False)
 
                     results.append(sess.run(pose))
 
