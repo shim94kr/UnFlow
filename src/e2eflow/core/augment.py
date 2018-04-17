@@ -197,7 +197,7 @@ def make_intrinsic_matrix(fx, fy, cx, cy):
 
 def make_intrinsics_matrix(fx, fy, cx, cy):
     # Assumes batch input
-    batch_size = fx.get_shape().as_list()[0]
+    batch_size = tf.shape(fx)[0]
     zeros = tf.zeros_like(fx)
     r1 = tf.stack([fx, zeros, cx], axis=1)
     r2 = tf.stack([zeros, fy, cy], axis=1)

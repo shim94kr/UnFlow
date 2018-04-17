@@ -180,8 +180,9 @@ class Trainer():
             #if self.debug:
             _add_image_summaries()
 
+        util_gan = self.params.get('util_gan')
         if len(self.devices) == 1:
-            if self.params['util_gan']:
+            if util_gan:
                 gen_loss, discrim_loss = self.loss_fn(batch, self.params, self.normalization)
                 loss_ = gen_loss + discrim_loss
                 with tf.variable_scope('dicriminator_train'):
@@ -213,7 +214,7 @@ class Trainer():
                 for i, devid in enumerate(self.devices):
                     with tf.device(devid):
                         with tf.name_scope('tower_{}'.format(i)) as scope:
-                            if self.params['util_gan']:
+                            if util_gan:
                                 gen_loss, discrim_loss = self.loss_fn(batch, self.params, self.normalization)
                                 loss_ = gen_loss + discrim_loss
 
@@ -254,7 +255,7 @@ class Trainer():
             grads = average_gradients(tower_grads)
             apply_gradient_op = opt.apply_gradients(grads)
             train_op = apply_gradient_op
-            if self.params['util_gan']:
+            if util_gan:
                 grads_d = average_gradients(tower_grads_d)
                 apply_gradient_op = opt.apply_gradients(grads_d)
                 train_op_d = apply_gradient_op

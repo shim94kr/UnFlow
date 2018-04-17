@@ -122,7 +122,7 @@ class Input():
 
     def input_raw(self, swap_images=True, sequence=True,
                   needs_crop=True, shift=0, seed=0,
-                  center_crop=False, skip=0, epipolar_weight=None):
+                  center_crop=False, skip=0, pose_pred=None):
         """Constructs input of raw data.
 
         Args:
@@ -186,7 +186,7 @@ class Input():
         filenames_2 = list(filenames_2)
 
         with tf.variable_scope('train_inputs'):
-            if epipolar_weight is not None:
+            if pose_pred is not None:
                 intrinsics = self.data.get_raw_intrinsics(filenames_1)
                 input_queue = tf.train.slice_input_producer([filenames_1, filenames_2, intrinsics],
                                                             shuffle=False)

@@ -266,9 +266,9 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             tf.add_to_collection('params', weight)
 
     if return_flow:
-        return final_loss + discrim_loss, final_flow_fw, final_flow_bw
+        return final_loss, final_flow_fw, final_flow_bw
     elif return_pose:
-        return final_loss + discrim_loss, poses_fw, poses_bw, final_flow_fw, final_flow_bw
+        return final_loss, poses_fw, poses_bw, final_flow_fw, final_flow_bw
     elif util_GAN:
         return final_loss, discrim_loss
     else:
