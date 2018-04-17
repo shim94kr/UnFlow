@@ -186,10 +186,10 @@ class Input():
         filenames_2 = list(filenames_2)
 
         with tf.variable_scope('train_inputs'):
-            if pose_pred is not None:
+            if pose_pred :
                 intrinsics = self.data.get_raw_intrinsics(filenames_1)
                 input_queue = tf.train.slice_input_producer([filenames_1, filenames_2, intrinsics],
-                                                            shuffle=False)
+                                                            shuffle=False, capacity=len(filenames_1))
                 image_1, image_2 = read_images_from_disk(input_queue[0:2])
                 intrinsic = input_queue[2]
 
@@ -201,7 +201,7 @@ class Input():
 
             else:
                 input_queue = tf.train.slice_input_producer([filenames_1, filenames_2],
-                                                            shuffle=False)
+                                                            shuffle=False, capacity=len(filenames_1))
                 image_1, image_2 = read_images_from_disk(input_queue)
 
                 if needs_crop:
