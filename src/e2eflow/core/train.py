@@ -106,8 +106,6 @@ def _add_pose_summaries():
         tf.summary.histogram("sigtx", pose[:,6])
         tf.summary.histogram("sigty", pose[:,7])
         tf.summary.histogram("sigtz", pose[:,8])
-        tf.summary.histogram("sigr", pose[:,9])
-
 
 def _eval_plot(results, image_names, title):
     import matplotlib.pyplot as plt
