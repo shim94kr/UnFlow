@@ -6,6 +6,7 @@ out
 
 *.ckpt
 *~
+*.pyc
 
 __pycache__
 
