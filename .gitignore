@@ -22,6 +22,7 @@ basic_concept_test.py
 .idea/dictionaries
 
 # Sensitive or high-churn files
+.idea/
 .idea/**/dataSources/
 .idea/**/dataSources.ids
 .idea/**/dataSources.local.xml
