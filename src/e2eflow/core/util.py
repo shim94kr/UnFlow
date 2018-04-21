@@ -153,7 +153,7 @@ def posegrid_vec2mat(posegrid):
   translation = tf.concat([tx, ty, tz], axis = 3)
   rot_mat = eulergrid2mat(rz, ry, rx)
   
-  return rot_mat, translation, tf.concat([sigtx, sigty, sigtz, sigrx, sigry, sigrz], axis=3), tf.concat([translation, rx, ry, rz], axis=3)
+  return rot_mat, translation, tf.concat([sigtx, sigty, sigtz], axis=3), tf.concat([translation, rx, ry, rz], axis=3)
 
 def pose_vec2mat(vec):
   """Converts 6DoF parameters to transformation matrix
