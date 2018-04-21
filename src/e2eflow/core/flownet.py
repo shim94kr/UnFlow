@@ -241,11 +241,11 @@ def _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2, conv1=None, input
             concat2_p = tf.concat([pose2, meshgrid2], 1)
             cnvp2_2 = slim.conv2d(concat2_p, 32, [3, 3], stride=1, scope='cnvp2_2', activation_fn=None)
             cnvp2_3 = slim.conv2d(cnvp2_2, 64, [3, 3], stride=1, scope='cnvp2_3', activation_fn=None)
-            flow2_2 = slim.conv2d(cnvp2_3, channels, 1, scope='flow2', activation_fn=None)
+            flow2_2 = slim.conv2d(cnvp2_3, channels, 1, scope='flow2',
+                                activation_fn=None)
 
-            pose2_dwn3 = slim.conv2d(pose2, channels_p, [3, 3], stride=2, scope='pose2_dwn3', activation_fn=None)
-            flow2_dwn3 = slim.conv2d(flow2_2, channels, [3, 3], stride=2, scope='flow2_dwn3', activation_fn=None)
-            concat3 = tf.concat([pose2_dwn3, flow2_dwn3, flow3, meshgrid3], 1)
+            cnv3 = slim.conv2d(cnv2_3, 16, [3, 3], stride=2, scope='cnv3', activation_fn=_leaky_relu)
+            concat3 = tf.concat([cnv3, flow3, meshgrid3], 1)
             cnv3_2 = slim.conv2d(concat3, 32, [3, 3], stride=1, scope='cnv3_2', activation_fn=None)
             cnv3_3 = slim.conv2d(cnv3_2, 64, [3, 3], stride=1, scope='cnv3_3', activation_fn=None)
             pose3 = slim.conv2d(cnv3_3, channels_p, 3, scope='pose3',
@@ -253,11 +253,11 @@ def _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2, conv1=None, input
             concat3_p = tf.concat([pose3, meshgrid3], 1)
             cnvp3_2 = slim.conv2d(concat3_p, 32, [3, 3], stride=1, scope='cnvp3_2', activation_fn=None)
             cnvp3_3 = slim.conv2d(cnvp3_2, 64, [3, 3], stride=1, scope='cnvp3_3', activation_fn=None)
-            flow3_2 = slim.conv2d(cnvp3_3, channels, 1, scope='flow3', activation_fn=None)
+            flow3_2 = slim.conv2d(cnvp3_3, channels, 1, scope='flow3',
+                                activation_fn=None)
 
-            pose3_dwn4 = slim.conv2d(pose3, channels_p, [3, 3], stride=2, scope='pose3_dwn4', activation_fn=None)
-            flow3_dwn4 = slim.conv2d(flow3_2, channels, [3, 3], stride=2, scope='flow3_dwn4', activation_fn=None)
-            concat4 = tf.concat([pose3_dwn4, flow3_dwn4, flow4, meshgrid4], 1)
+            cnv4 = slim.conv2d(cnv3_3, 16, [3, 3], stride=2, scope='cnv4', activation_fn=_leaky_relu)
+            concat4 = tf.concat([cnv4, flow4, meshgrid4], 1)
             cnv4_2 = slim.conv2d(concat4, 32, [3, 3], stride=1, scope='cnv4_2', activation_fn=None)
             cnv4_3 = slim.conv2d(cnv4_2, 64, [3, 3], stride=1, scope='cnv4_3', activation_fn=None)
             pose4 = slim.conv2d(cnv4_3, channels_p, 3, scope='pose4',
@@ -265,11 +265,11 @@ def _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2, conv1=None, input
             concat4_p = tf.concat([pose4, meshgrid4], 1)
             cnvp4_2 = slim.conv2d(concat4_p, 32, [3, 3], stride=1, scope='cnvp4_2', activation_fn=None)
             cnvp4_3 = slim.conv2d(cnvp4_2, 64, [3, 3], stride=1, scope='cnvp4_3', activation_fn=None)
-            flow4_2 = slim.conv2d(cnvp4_3, channels, 1, scope='flow4', activation_fn=None)
+            flow4_2 = slim.conv2d(cnvp4_3, channels, 1, scope='flow4',
+                                activation_fn=None)
 
-            pose4_dwn5 = slim.conv2d(pose4, channels_p, [3, 3], stride=2, scope='pose4_dwn5', activation_fn=None)
-            flow4_dwn5 = slim.conv2d(flow4_2, channels, [3, 3], stride=2, scope='flow4_dwn5', activation_fn=None)
-            concat5 = tf.concat([pose4_dwn5, flow4_dwn5, flow5, meshgrid5], 1)
+            cnv5 = slim.conv2d(cnv4_3, 16, [3, 3], stride=2, scope='cnv5', activation_fn=_leaky_relu)
+            concat5 = tf.concat([cnv5, flow5, meshgrid5], 1)
             cnv5_2 = slim.conv2d(concat5, 32, [3, 3], stride=1, scope='cnv5_2', activation_fn=None)
             cnv5_3 = slim.conv2d(cnv5_2, 64, [3, 3], stride=1, scope='cnv5_3', activation_fn=None)
             pose5 = slim.conv2d(cnv5_3, channels_p, 3, scope='pose5',
@@ -277,11 +277,11 @@ def _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2, conv1=None, input
             concat5_p = tf.concat([pose5, meshgrid5], 1)
             cnvp5_2 = slim.conv2d(concat5_p, 32, [3, 3], stride=1, scope='cnvp5_2', activation_fn=None)
             cnvp5_3 = slim.conv2d(cnvp5_2, 64, [3, 3], stride=1, scope='cnvp5_3', activation_fn=None)
-            flow5_2 = slim.conv2d(cnvp5_3, channels, 1, scope='flow5', activation_fn=None)
+            flow5_2 = slim.conv2d(cnvp5_3, channels, 1, scope='flow5',
+                                activation_fn=None)
 
-            pose5_dwn6 = slim.conv2d(pose5, channels_p, [3, 3], stride=2, scope='pose5_dwn6', activation_fn=None)
-            flow5_dwn6 = slim.conv2d(flow5_2, channels, [3, 3], stride=2, scope='flow5_dwn6', activation_fn=None)
-            concat6 = tf.concat([pose5_dwn6, flow5_dwn6, flow6, meshgrid6], 1)
+            cnv6 = slim.conv2d(cnv5_3, 16, [3, 3], stride=2, scope='cnv6', activation_fn=_leaky_relu)
+            concat6 = tf.concat([cnv6, flow6, meshgrid6], 1)
             cnv6_2 = slim.conv2d(concat6, 32, [3, 3], stride=1, scope='cnv6_2', activation_fn=None)
             cnv6_3 = slim.conv2d(cnv6_2, 64, [3, 3], stride=1, scope='cnv6_3', activation_fn=None)
             pose6 = slim.conv2d(cnv6_3, channels_p, 3, scope='pose6',
@@ -289,7 +289,8 @@ def _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2, conv1=None, input
             concat6_p = tf.concat([pose6, meshgrid6], 1)
             cnvp6_2 = slim.conv2d(concat6_p, 32, [3, 3], stride=1, scope='cnvp6_2', activation_fn=None)
             cnvp6_3 = slim.conv2d(cnvp6_2, 64, [3, 3], stride=1, scope='cnvp6_3', activation_fn=None)
-            flow6_2 = slim.conv2d(cnvp6_3, channels, 1, scope='flow6', activation_fn=None)
+            flow6_2 = slim.conv2d(cnvp6_3, channels, 1, scope='flow6',
+                                activation_fn=None)
 
     flows = [flow2, flow3, flow4, flow5, flow6]
     if full_res:
