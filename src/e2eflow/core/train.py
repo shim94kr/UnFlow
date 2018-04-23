@@ -177,8 +177,8 @@ class Trainer():
             _add_loss_summaries()
             _add_param_summaries()
             _add_pose_summaries()
-            #if self.debug:
-            _add_image_summaries()
+            if self.debug:
+                _add_image_summaries()
 
         util_gan = self.params.get('util_gan')
         if len(self.devices) == 1:

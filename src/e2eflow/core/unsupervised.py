@@ -207,7 +207,7 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             flow_fw_s, flow_bw_s = flow_pair
             mask_occlusion = params.get('mask_occlusion', '')
             assert mask_occlusion in ['fb', 'disocc', '', 'both']
-            if len(batch) == 3:
+            if pose_prediction:
                 losses, pose_fw_all, pose_bw_all = compute_losses(im1_s, im2_s,
                             flow_fw_s * flow_scale, flow_bw_s * flow_scale,
                             poses_fw[i], poses_bw[i], intrinsics1[:, i + 2, :, :], intrinsics2[:, i + 2, :, :],
